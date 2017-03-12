@@ -26,6 +26,7 @@
 // Functions.
 #define PWM_ON CCP1CON=CCP1CON |  0b11111100
 #define PWM_OFF CCP1CON=CCP1CON & 0b11110000
+#define PWM_TOGGLE CCP1CON |= 
 #define ON(x) GPIO |= x
 #define OFF(x) GPIO &= ~x
 
@@ -33,7 +34,7 @@
 //#define PWM_OFF PR2 = 0b00110001 ;T2CON = 0b00000100 ;CCPR1L = 0b00100111 ;CCP1CON = 0b00111100 ;
 
 
-#define ALERT_THRESHOLD 5 // Alert within +- cm
+#define MAX_RANGE 80 // Max Range to detect objects.
 
 #include <xc.h>
 
@@ -44,42 +45,64 @@ unsigned int GetElapsedTime(void);
 void ResetTimer(void);
 void ultrasonicTask(void);
 void blinkLEDTask(void);
+void ADCTask(void);
 
 // Some global variables.
-unsigned int Dist, BlinkFreq = 0; 
+unsigned int Dist, BlinkFreq = 0;
+unsigned long Adc = 0;
+bit Blink = 0;
 
 void main(void) {
-    unsigned long alertDist, adc = 0;
+    unsigned long alertDist = 0;
 
     init();
     PWM_OFF;
     ei(); //enable global interrupts
 
     // Initial Blink Frequency
-    BlinkFreq=400;
-    
+    BlinkFreq = 800;
+
     while (1) {
 
         ultrasonicTask();
         blinkLEDTask();
-        
-        if (Dist < 80) {
-            BlinkFreq = 500;
-            continue;
-        }
-        
-        // adc range 30 - 1000 (11 cm - 390 cm)
-        //adc = getADC();
-        //alertDist = 400 * adc / 1024;
+        ADCTask();
 
-        /*if (actualDist < alertDist) {
+
+        // adc range 30 - 1000 (11 cm - 390 cm)
+
+        alertDist = 400 * Adc / 1024;
+        int delta = Dist - alertDist;
+
+        /*
+        if (Dist < alertDist) {
+            Blink = 1;
             //PWM_ON;
-            ON(LED);
+            BlinkFreq = 10;
             continue;
         }*/
 
-        //PWM_OFF;
-       BlinkFreq = 1000;
+        if (delta <= 0) {
+            Blink = 1;
+            BlinkFreq = 10;
+            PWM_ON;
+            continue;
+        }
+        else if (delta > 0 && delta < 50) {
+            Blink = 1;
+            BlinkFreq = 100;
+            PWM_OFF;
+            continue;
+        } else if (delta > 50 && delta < 100) {
+            Blink = 1;
+            BlinkFreq = 500;
+            PWM_OFF;
+            continue;
+        }
+
+
+        PWM_OFF;
+        Blink = 0;
     }
     return;
 }
@@ -132,8 +155,55 @@ unsigned int getADC(void) {
     return adc_result;
 }
 
+void ADCTask(void) {
+    static int start = 0;
+
+    static enum {
+        START = 0,
+        WAIT,
+        START_ADC,
+        WAIT_CONVERSION,
+        GET_RESULT,
+    } state = START;
+
+    switch (state) {
+        case START:
+            start = GetElapsedTime();
+            state = WAIT;
+
+            // Delay each ADC conversion.
+        case WAIT:
+            if ((GetElapsedTime() - start) < 50) {
+                return;
+            }
+            start = 0;
+            state = START_ADC;
+
+        case START_ADC:
+            ADCON0 = 0b10000101;
+            ADCON0 |= 0x2;
+            state = WAIT_CONVERSION;
+
+        case WAIT_CONVERSION:
+            if (ADCON0 & 0x02) {
+                return;
+            }
+            state = GET_RESULT;
+
+        case GET_RESULT:
+            Adc = ADRESH;
+            Adc = (Adc << 8) | ADRESL;
+            state = START;
+    }
+}
+
 void blinkLEDTask(void) {
     static int last = 0;
+
+    if (!Blink) {
+        OFF(LED);
+        return;
+    }
 
     int now = GetElapsedTime();
     if (now - last >= BlinkFreq) {
@@ -153,7 +223,7 @@ void ultrasonicTask(void) {
         WAIT_LINE_HIGH,
         WAIT_LINE_LOW,
         GET_RESULT,
-    } state = WAIT;
+    } state = START;
 
     switch (state) {
 
@@ -193,7 +263,7 @@ void ultrasonicTask(void) {
             TMR1L = 0;
             TMR1H = 0;
             Dist = pulse_width / (int) 58.82; // Distance in cm.
-            state = WAIT;
+            state = START;
     }
 }
 
