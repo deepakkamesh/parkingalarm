@@ -21,26 +21,21 @@
 // Pin declarations.
 #define US_TRIG 0x20 //GPIO 5
 #define T1GP 0x10 // GPIO 4
-#define LED 0x1 // GP0
+#define LED 0x1 // GP 0
 
 // Functions.
 #define PWM_ON CCP1CON=CCP1CON |  0b11111100
 #define PWM_OFF CCP1CON=CCP1CON & 0b11110000
-#define PWM_TOGGLE CCP1CON |= 
 #define ON(x) GPIO |= x
 #define OFF(x) GPIO &= ~x
 
-//#define PWM_ON    PR2 = 0b11001100;    T2CON = 0b00000101; CCPR1L = 0b10100011; CCP1CON = 0b00111100;
-//#define PWM_OFF PR2 = 0b00110001 ;T2CON = 0b00000100 ;CCPR1L = 0b00100111 ;CCP1CON = 0b00111100 ;
-
-
+// Other Definitions.
 #define MAX_RANGE 80 // Max Range to detect objects.
 
 #include <xc.h>
 
 // Function Declarations.
 void init(void);
-unsigned int getADC(void);
 unsigned int GetElapsedTime(void);
 void ResetTimer(void);
 void ultrasonicTask(void);
@@ -59,48 +54,36 @@ void main(void) {
     PWM_OFF;
     ei(); //enable global interrupts
 
-    // Initial Blink Frequency
-    BlinkFreq = 800;
-
     while (1) {
-
         ultrasonicTask();
         blinkLEDTask();
         ADCTask();
 
-
-        // adc range 30 - 1000 (11 cm - 390 cm)
-
+        // adc range 30 - 1000 (alertDist: 11 cm - 390 cm)
         alertDist = 400 * Adc / 1024;
         int delta = Dist - alertDist;
-
-        /*
-        if (Dist < alertDist) {
-            Blink = 1;
-            //PWM_ON;
-            BlinkFreq = 10;
-            continue;
-        }*/
 
         if (delta <= 0) {
             Blink = 1;
             BlinkFreq = 10;
             PWM_ON;
             continue;
-        }
-        else if (delta > 0 && delta < 50) {
+        } else if (delta > 0 && delta <= 30) {
             Blink = 1;
             BlinkFreq = 100;
             PWM_OFF;
             continue;
-        } else if (delta > 50 && delta < 100) {
+        } else if (delta > 30 && delta <= 60) {
             Blink = 1;
-            BlinkFreq = 500;
+            BlinkFreq = 400;
+            PWM_OFF;
+            continue;
+        } else if (delta > 60 && delta < 90) {
+            Blink = 1;
+            BlinkFreq = 1200;
             PWM_OFF;
             continue;
         }
-
-
         PWM_OFF;
         Blink = 0;
     }
@@ -140,19 +123,6 @@ void init(void) {
     OPTION_REG = 0b11000010; // Prescalar 1:8
     T0IE = 1;
 
-}
-
-// getADC gets the current ADC value of the Potentiometer.
-
-unsigned int getADC(void) {
-    unsigned int adc_result = 0;
-    ADCON0 = 0b10000101;
-    ADCON0 |= 0x2; // Start A/D Conversion.
-    __delay_us(20);
-    while (ADCON0 & 0x02); //Wait for conversion
-    adc_result = ADRESH;
-    adc_result = (adc_result << 8) | ADRESL;
-    return adc_result;
 }
 
 void ADCTask(void) {
