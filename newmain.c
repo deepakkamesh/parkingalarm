@@ -184,7 +184,7 @@ void blinkLEDTask(void) {
 
 void ultrasonicTask(void) {
     unsigned int pulse_width = 0;
-    static int start = 0;
+    static int start,wait = 0;
 
     static enum {
         START = 0,
@@ -213,12 +213,14 @@ void ultrasonicTask(void) {
             ON(US_TRIG);
             __delay_us(10);
             OFF(US_TRIG);
+            wait = GetElapsedTime();
             state = WAIT_LINE_HIGH;
 
         case WAIT_LINE_HIGH:
-            if (!(GPIO & T1GP)) {
+            if (!(GPIO & T1GP) && (GetElapsedTime() - wait) < 100) {
                 return;
             }
+            wait = 0;
             state = WAIT_LINE_LOW;
 
         case WAIT_LINE_LOW:
